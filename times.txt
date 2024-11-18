@@ -1,0 +1,8 @@
+type1_small: 212ms
+type1_large: 1712ms
+type2_small: 199ms
+type2_large: 16805ms
+type3_small: 199ms
+type3_large: 12829ms
+type4_small: 412ms
+type4_large: 6926ms
