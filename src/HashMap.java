@@ -1,6 +1,12 @@
+import java.util.ArrayList;
+
 public class HashMap<Key, Value> {
     private static final int FIRST_CAPACITY = 1001;
     private static final float LOAD_FACTOR = 0.6f;
+
+    public int size() {
+        return size;
+    }
 
     private int capacity;
     private float loadFactor;
@@ -54,10 +60,10 @@ public class HashMap<Key, Value> {
         }
         this.myTable = newTable;
     }
-    public int insert(Key key, Value value){
+    public boolean insert(Key key, Value value){
         int index = hash(key);
         while (myTable[index] != null &&  !myTable[index].isDELETED()){
-            if (myTable[index].key.equals(key)) return -1;
+            if (myTable[index].key.equals(key)) return false;
             index = (index + 1) % capacity;
         }
         myTable[index] = new Node<>(key, value);
@@ -65,7 +71,7 @@ public class HashMap<Key, Value> {
         if ((float) size /capacity > loadFactor){
             rehashing();
         }
-        return 0;
+        return true;
     }
 
     public boolean contains(Key key){
@@ -101,5 +107,31 @@ public class HashMap<Key, Value> {
             index = (index + 1) % capacity;
         }
         return false;
+    }
+    public ArrayList keyList(){
+        ArrayList arrayList = new ArrayList<>();
+        for(Node<Key, Value> node: myTable){
+            if (node!= null && !node.isDELETED()){
+                arrayList.add(node.key);
+            }
+        }
+        return arrayList;
+    }
+    public ArrayList valueList(){
+        ArrayList arrayList = new ArrayList<>();
+        for(Node<Key, Value> node: myTable){
+            if (node!= null && !node.isDELETED()){
+                arrayList.add(node.value);
+            }
+        }
+        return arrayList;
+    }
+    public myBinaryHeap heapPost(myBinaryHeap binaryHeap){
+        for(Node<Key, Value> node: myTable){
+            if (node!= null && !node.isDELETED()){
+                binaryHeap.insert((Post) node.value);
+            }
+        }
+        return binaryHeap;
     }
 }

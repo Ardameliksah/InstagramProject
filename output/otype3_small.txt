@@ -147,8 +147,8 @@ user00000007 saw post00000016 while scrolling.
 user00000007 saw post00000014 while scrolling.
 user00000007 saw post00000011 while scrolling and clicked the like button.
 user00000007 saw post00000006 while scrolling and clicked the like button.
-user00000007 saw post00000003 while scrolling and clicked the like button.
 user00000007 saw post00000004 while scrolling and clicked the like button.
+user00000007 saw post00000003 while scrolling and clicked the like button.
 No more posts in feed.
 user00000006 is scrolling through feed:
 No more posts in feed.
@@ -494,8 +494,8 @@ user00000022 saw post00000024.
 user00000016 saw post00000017.
 user00000012 is scrolling through feed:
 user00000012 saw post00000011 while scrolling.
-user00000012 saw post00000030 while scrolling.
-user00000012 saw post00000003 while scrolling and clicked the like button.
+user00000012 saw post00000003 while scrolling.
+user00000012 saw post00000030 while scrolling and clicked the like button.
 Some error occurred in scroll_through_feed.
 Some error occurred in unfollow_user.
 user00000011 saw post00000066.
