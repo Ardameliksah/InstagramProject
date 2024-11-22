@@ -6,7 +6,7 @@ public class User {
     private HashMap followerMap = new HashMap<>(10);
     public HashMap<String, Boolean> seenPosts = new HashMap<>(10);
     public HashMap<String, Boolean> createdPosts = new HashMap<>(10);
-    public ArrayList<Post> feed = new ArrayList<Post>();
+    public myBinaryHeap feed = new myBinaryHeap(10);
 
 
     public User(String userId) {
@@ -17,8 +17,20 @@ public class User {
         followerMap.insert(userId,user);
         return true;
     }
-    public void createFeed(Post post){
-        feed.add(post);
+    public String scrolling(int num, Post post){
+        seenPosts.insert(post.getPostId(),true);
+        if (num == 1){
+            return userId + " saw " + post.getPostId() + " while scrolling and clicked the like button.";
+        } else{
+            return userId + " saw " + post.getPostId() + " while scrolling.";
+        }
+    }
+    public boolean addFeed(Post post){
+        if (createdPosts.contains(post.getPostId()) || seenPosts.contains(post.getPostId())){
+            return false;
+        }
+        feed.basicAdd(post);
+        return true;
     }
     public boolean unfollowedBy(String userId){
         return followerMap.remove(userId);

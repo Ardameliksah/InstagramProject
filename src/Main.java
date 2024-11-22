@@ -11,7 +11,7 @@ public class Main {
         Manager manager = new Manager();
         try {
             PrintStream outstream = new PrintStream("my_outputs/output.txt");
-            Scanner scanner = new Scanner(new File("input/type3_large.txt"));
+            Scanner scanner = new Scanner(new File("input/type3_small.txt"));
             long startTime = System.currentTimeMillis();
             while (scanner.hasNextLine()) {
                 String input = scanner.nextLine().trim();

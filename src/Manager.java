@@ -7,6 +7,7 @@ public class Manager {
     public Manager() {
         this.userMap = new HashMap<>();
         this.postMap = new HashMap<>();
+        this.likeHeap = new myBinaryHeap();
     }
 
     public String create_user(String userId){
@@ -38,6 +39,7 @@ public class Manager {
         if (user == null) return "Some error occurred in create_post.";
         if (!postMap.insert(postId, post)) return "Some error occurred in create_post.";
         user.createPost(postId);
+        likeHeap.insert(post);
         return userId+" created a post with Id " + postId + ".";
     }
     public String see_post(String userId, String postId){
@@ -65,21 +67,22 @@ public class Manager {
 
     }
     public String generate_feed(String userId, int num){
-        likeHeap = new myBinaryHeap(postMap.size());
-        likeHeap = postMap.heapPost(likeHeap);
+
         User user = userMap.find(userId);
         if (user == null) return "Some error occurred in generate_feed.";
-        while (num > 0){
-            Post post = likeHeap.deleteMax();
-            if (post == null) return "No more posts available for "+userId+".";
-            if (!user.seenPosts.contains(post.getPostId())) {
-                user.createFeed(post);
+
+        likeHeap.buildHeap();
+
+        int index = 0;
+        while (num > 0 && index < likeHeap.size()){
+            if (user.addFeed(likeHeap.array[index])){
                 num -= 1;
             }
+            index++;
         }
         return null;
     }
-    public ArrayList<String> scroll_through_feed(String userId, int num, int... like ){
+    public ArrayList<String> scroll_through_feed(String userId, int num, int[] like ){
         User user = userMap.find(userId);
         ArrayList<String> result = new ArrayList<String>();
         if (user == null){
@@ -88,21 +91,16 @@ public class Manager {
         }
         result.add(userId + " is scrolling through feed:");
         int likeIndex = 0;
-        int feedSize = user.feed.size();
-        while(likeIndex < feedSize && likeIndex < num){
-            Post post = user.feed.get(likeIndex);
-            if (like[likeIndex] == 0){
-                user.seePost(post.getPostId());
-                result.add(userId + " saw "+ post.getPostId() + " while scrolling.");
-            } else if (like[likeIndex] == 1) {
-                user.likePost(post);
-                result.add(userId + " saw " + post.getPostId() + " while scrolling and clicked the like button.");
+        while(likeIndex < num){
+            Post post = user.feed.deleteMax();
+            if(post == null){
+                result.add("No more posts in feed.");
+                return result;
             }
+            String response = user.scrolling(like[likeIndex], post);
             likeIndex+=1;
         }
-        if (likeIndex < num) result.add("No more posts in feed.");
         return result;
-
     }
     public void sort_posts(String userId){
 

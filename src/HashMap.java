@@ -117,15 +117,6 @@ public class HashMap<Key, Value> {
         }
         return arrayList;
     }
-    public ArrayList valueList(){
-        ArrayList arrayList = new ArrayList<>();
-        for(Node<Key, Value> node: myTable){
-            if (node!= null && !node.isDELETED()){
-                arrayList.add(node.value);
-            }
-        }
-        return arrayList;
-    }
     public myBinaryHeap heapPost(myBinaryHeap binaryHeap){
         for(Node<Key, Value> node: myTable){
             if (node!= null && !node.isDELETED()){
