@@ -1,14 +1,14 @@
 import pandas as pd
 from collections import defaultdict
+from pyspark.sql import functions as F
 
 # =========================================================
 # CONFIG
 # =========================================================
-excel_path = "01_Get_Variables_Info/univariate_selected_features.xlsx"
-final_parquet = "outputs/final_test.parquet"
-output_parquet = "outputs/final_test_transaction.parquet"
+excel_path = "../../../00_Tüm_Kitle_Trend_Analizi/01_Get_Variables_Info/univariate_selected_features.xlsx"
+output_parquet = "outputs/final_from_v6_with_univariate_features.parquet"
 
-middle_table = "analytics_risk_sb.SME_MNG_RATING_UNQ_FNL_V5"
+middle_table = "analytics_risk_sb.SME_MNG_RATING_UNQ_FNL_V6"
 
 candidate_tables = [
     "cr_mva_trx.sme_temporal_trx_government_payments_monthly",
@@ -25,9 +25,10 @@ candidate_tables = [
 proposal_id_col = "PROPOSAL_ID"
 party_id_col = "PARTY_ID"
 prt_date_col = "PRT_DATE"
-middle_date_col = "DATA_DATE_SP"
+middle_date_col = "DATA_DATE_TRUE"
 
-skip_existing_final_cols = True
+# skip variables that already exist in V6
+skip_existing_middle_cols = True
 
 
 # =========================================================
@@ -83,18 +84,18 @@ def build_table_column_inventory(candidate_tables, required_id_cols):
     return table_cols, table_lower_map
 
 
-def map_features_to_tables(features, table_lower_map, existing_final_cols=None):
+def map_features_to_tables(features, table_lower_map, existing_cols=None):
     feature_to_table = {}
     missing_features = []
 
-    existing_final_cols_lower = set()
-    if existing_final_cols is not None:
-        existing_final_cols_lower = {c.lower() for c in existing_final_cols}
+    existing_cols_lower = set()
+    if existing_cols is not None:
+        existing_cols_lower = {c.lower() for c in existing_cols}
 
     for feat in features:
         feat_lower = feat.lower()
 
-        if feat_lower in existing_final_cols_lower:
+        if feat_lower in existing_cols_lower:
             continue
 
         found = False
@@ -110,12 +111,6 @@ def map_features_to_tables(features, table_lower_map, existing_final_cols=None):
     return feature_to_table, missing_features
 
 
-def force_month_end_from_corrupted_datetime(series):
-    s = pd.to_datetime(series, errors="coerce")
-    s = s + pd.offsets.MonthEnd(0)
-    return s.dt.normalize()
-
-
 def deduplicate_columns_preserve_order(cols):
     seen = set()
     out = []
@@ -127,58 +122,7 @@ def deduplicate_columns_preserve_order(cols):
 
 
 # =========================================================
-# 1) LOAD LOCAL FINAL PARQUET
-# =========================================================
-final_df = pd.read_parquet(final_parquet)
-print("Initial final_df shape:", final_df.shape)
-
-if proposal_id_col not in final_df.columns:
-    raise ValueError(f"{proposal_id_col} not found in local final parquet")
-
-final_df[proposal_id_col] = final_df[proposal_id_col].astype(str)
-
-
-# =========================================================
-# 2) READ MIDDLE TABLE AND FIX DATA_DATE_SP -> PRT_DATE
-# =========================================================
-middle_sdf = spark.sql(f"""
-    SELECT
-        PROPOSAL_ID,
-        PARTY_ID,
-        DATA_DATE_SP
-    FROM {middle_table}
-""")
-
-middle_pdf = middle_sdf.toPandas()
-
-middle_pdf[proposal_id_col] = middle_pdf[proposal_id_col].astype(str)
-middle_pdf[party_id_col] = middle_pdf[party_id_col].astype(str)
-
-middle_pdf["DATA_DATE_FIXED"] = force_month_end_from_corrupted_datetime(middle_pdf[middle_date_col])
-middle_pdf[prt_date_col] = middle_pdf["DATA_DATE_FIXED"].dt.strftime("%Y%m%d")
-
-middle_pdf = middle_pdf[[proposal_id_col, party_id_col, prt_date_col]].drop_duplicates()
-
-print("Middle mapping shape:", middle_pdf.shape)
-print(middle_pdf.head())
-
-
-# =========================================================
-# 3) JOIN LOCAL FINAL_DF WITH MIDDLE TABLE
-# =========================================================
-final_df = final_df.merge(
-    middle_pdf,
-    on=proposal_id_col,
-    how="left"
-)
-
-print("After middle join shape:", final_df.shape)
-print("Missing PARTY_ID:", final_df[party_id_col].isna().sum())
-print("Missing PRT_DATE:", final_df[prt_date_col].isna().sum())
-
-
-# =========================================================
-# 4) READ ALL REQUESTED FEATURES FROM ALL EXCEL SHEETS
+# 1) READ ALL REQUESTED FEATURES FROM EXCEL
 # =========================================================
 xls = pd.ExcelFile(excel_path)
 sheet_names = xls.sheet_names
@@ -196,11 +140,40 @@ for f in all_requested_features:
         seen.add(f)
         all_requested_features_unique.append(f)
 
-print("Total unique requested features from all sheets:", len(all_requested_features_unique))
+print("Total unique requested features:", len(all_requested_features_unique))
 
 
 # =========================================================
-# 5) BUILD SPARK TABLE INVENTORY
+# 2) READ FULL V6 TABLE AS BASE
+# =========================================================
+base_sdf = spark.table(middle_table)
+
+# Cast ids
+if proposal_id_col in base_sdf.columns:
+    base_sdf = base_sdf.withColumn(proposal_id_col, F.col(proposal_id_col).cast("string"))
+
+if party_id_col in base_sdf.columns:
+    base_sdf = base_sdf.withColumn(party_id_col, F.col(party_id_col).cast("string"))
+else:
+    raise ValueError(f"{party_id_col} not found in {middle_table}")
+
+if middle_date_col not in base_sdf.columns:
+    raise ValueError(f"{middle_date_col} not found in {middle_table}")
+
+# recreate/fix PRT_DATE from DATA_DATE_TRUE
+base_sdf = base_sdf.withColumn(
+    prt_date_col,
+    F.date_format(F.last_day(F.to_date(F.col(middle_date_col))), "yyyyMMdd")
+)
+
+# optional: if one proposal should appear once
+# base_sdf = base_sdf.dropDuplicates([proposal_id_col])
+
+print(f"Base V6 column count: {len(base_sdf.columns)}")
+
+
+# =========================================================
+# 3) BUILD SOURCE TABLE INVENTORY
 # =========================================================
 required_id_cols = [party_id_col, prt_date_col]
 table_cols, table_lower_map = build_table_column_inventory(candidate_tables, required_id_cols)
@@ -210,14 +183,14 @@ if not table_cols:
 
 
 # =========================================================
-# 6) MAP FEATURES TO TABLES
+# 4) MAP FEATURES TO TABLES
 # =========================================================
-existing_final_cols = set(final_df.columns) if skip_existing_final_cols else None
+existing_base_cols = base_sdf.columns if skip_existing_middle_cols else None
 
 feature_to_table, missing_features = map_features_to_tables(
     all_requested_features_unique,
     table_lower_map,
-    existing_final_cols=existing_final_cols
+    existing_cols=existing_base_cols
 )
 
 print("Found features:", len(feature_to_table))
@@ -229,7 +202,7 @@ if missing_features:
 
 
 # =========================================================
-# 7) GROUP FEATURES BY TABLE
+# 5) GROUP FEATURES BY TABLE
 # =========================================================
 table_to_features = defaultdict(list)
 
@@ -241,20 +214,10 @@ for table, cols in table_to_features.items():
 
 
 # =========================================================
-# 8) CREATE UNIQUE JOIN KEYS FROM FINAL_DF
+# 6) LEFT JOIN SELECTED FEATURES ONTO FULL V6
 # =========================================================
-keys_pdf = final_df[[party_id_col, prt_date_col]].dropna().drop_duplicates().copy()
-keys_pdf[party_id_col] = keys_pdf[party_id_col].astype(str)
-keys_pdf[prt_date_col] = keys_pdf[prt_date_col].astype(str)
+final_sdf = base_sdf
 
-print("Unique key count:", keys_pdf.shape)
-
-keys_sdf = spark.createDataFrame(keys_pdf)
-
-
-# =========================================================
-# 9) READ NEEDED FEATURES TABLE BY TABLE AND JOIN BACK
-# =========================================================
 for table, feature_cols in table_to_features.items():
     lower_map = table_lower_map[table]
 
@@ -265,62 +228,48 @@ for table, feature_cols in table_to_features.items():
     select_cols = deduplicate_columns_preserve_order(select_cols)
 
     print("\n=========================================================")
-    print(f"Reading from table: {table}")
+    print(f"Joining from table: {table}")
     print(f"Feature count: {len(feature_cols)}")
 
-    src_sdf = spark.table(table).select(*select_cols)
-
-    joined_sdf = (
-        src_sdf.alias("src")
-        .join(
-            keys_sdf.alias("k"),
-            (src_sdf[real_party_col].cast("string") == keys_sdf[party_id_col].cast("string")) &
-            (src_sdf[real_prt_col].cast("string") == keys_sdf[prt_date_col].cast("string")),
-            how="inner"
-        )
+    src_sdf = (
+        spark.table(table)
+        .select(*select_cols)
+        .withColumn(party_id_col, F.col(real_party_col).cast("string"))
+        .withColumn(prt_date_col, F.col(real_prt_col).cast("string"))
         .select(
-            src_sdf[real_party_col].cast("string").alias(party_id_col),
-            src_sdf[real_prt_col].cast("string").alias(prt_date_col),
-            *[src_sdf[c] for c in feature_cols]
+            party_id_col,
+            prt_date_col,
+            *[F.col(c) for c in feature_cols]
         )
+        .dropDuplicates([party_id_col, prt_date_col])
     )
 
-    feat_pdf = joined_sdf.toPandas()
+    existing_cols = set(final_sdf.columns)
+    incoming_feature_cols = [c for c in feature_cols if c not in existing_cols]
 
-    if feat_pdf.empty:
-        print(f"[WARN] No matched rows found for {table}")
+    if not incoming_feature_cols:
+        print(f"[WARN] Nothing new to join from {table}")
         continue
 
-    # if same PARTY_ID + PRT_DATE appears multiple times, keep first
-    feat_pdf = feat_pdf.drop_duplicates(subset=[party_id_col, prt_date_col])
+    src_sdf = src_sdf.select(
+        party_id_col,
+        prt_date_col,
+        *incoming_feature_cols
+    )
 
-    print(f"Matched rows from {table}: {feat_pdf.shape}")
-
-    # prevent duplicate column collisions except join keys
-    incoming_non_keys = [c for c in feat_pdf.columns if c not in [party_id_col, prt_date_col]]
-    duplicate_non_keys = [c for c in incoming_non_keys if c in final_df.columns]
-
-    if duplicate_non_keys:
-        print(f"[WARN] These columns already exist in final_df and will be skipped: {duplicate_non_keys[:20]}")
-        keep_cols = [party_id_col, prt_date_col] + [c for c in incoming_non_keys if c not in final_df.columns]
-        feat_pdf = feat_pdf[keep_cols]
-
-    if feat_pdf.shape[1] <= 2:
-        print(f"[WARN] Nothing new to merge from {table}")
-        continue
-
-    final_df = final_df.merge(
-        feat_pdf,
+    final_sdf = final_sdf.join(
+        src_sdf,
         on=[party_id_col, prt_date_col],
         how="left"
     )
 
-    print("Current final_df shape:", final_df.shape)
+    print(f"Current column count: {len(final_sdf.columns)}")
 
 
 # =========================================================
-# 10) SAVE
+# 7) SAVE ONE FINAL PARQUET
 # =========================================================
-final_df.to_parquet(output_parquet, index=False)
+final_sdf.write.mode("overwrite").parquet(output_parquet)
+
 print(f"\nSaved final parquet to: {output_parquet}")
-print("Final shape:", final_df.shape)
+print(f"Final column count: {len(final_sdf.columns)}")
